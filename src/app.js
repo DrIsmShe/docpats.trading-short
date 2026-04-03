@@ -36,10 +36,9 @@ const MIN_WIN_RATE = 30;
 const MIN_TRADES_REQUIRED = 5;
 const MAX_DRAWDOWN_ALLOWED = 30;
 const RISK_PERCENT = 0.01;
+const MIN_USDT_AMOUNT = 6; // минимум 6 USDT на сделку
 
-// ML пороги для SHORT бота
 const ML_THRESHOLD_SHORT = 0.4; // торгуем только если ML < 40%
-const ML_THRESHOLD_NEUTRAL = 0.6; // боковик 40-60%
 
 export const botState = {
   regime: "—",
@@ -84,17 +83,12 @@ const getRiskProfile = (strategyName) => {
   return { sl: 1.0, tp: 2.5 };
 };
 
-const calcSLTP = (side, price, atr, strategyName) => {
+const calcSLTP = (price, atr, strategyName) => {
   const profile = getRiskProfile(strategyName);
-  return side === "SELL"
-    ? {
-        stopLoss: price + atr * profile.sl,
-        takeProfit: price - atr * profile.tp,
-      }
-    : {
-        stopLoss: price - atr * profile.sl,
-        takeProfit: price + atr * profile.tp,
-      };
+  return {
+    stopLoss: price + atr * profile.sl,
+    takeProfit: price - atr * profile.tp,
+  };
 };
 
 const filterValidShort = (strategies, regime) =>
@@ -102,17 +96,14 @@ const filterValidShort = (strategies, regime) =>
     const r = x.result;
     if (!r) return false;
 
-    // Breakout работает в даунтренде
     if (x.name === "Breakout") {
       return regime === "DOWNTREND";
     }
 
-    // Momentum работает в даунтренде
     if (x.name === "Momentum") {
       return regime === "DOWNTREND" || regime === "RANGE";
     }
 
-    // Mean Reversion в боковике
     const baseValid =
       r.totalTrades >= MIN_TRADES_REQUIRED &&
       r.profitFactor >= MIN_PROFIT_FACTOR &&
@@ -182,7 +173,7 @@ export const start = async () => {
     printResult("Mean Reversion", meanResult);
     printResult("Breakout", breakoutResult);
 
-    // ── SHORT бот торгует только в DOWNTREND ─────────
+    // SHORT бот молчит в UPTREND
     if (regime === "UPTREND") {
       console.log("⛔ SHORT бот: UPTREND — пропускаем");
       return;
@@ -228,14 +219,14 @@ export const start = async () => {
       return;
     }
 
-    // ── ML фильтр для SHORT ───────────────────────────
+    // ── ML фильтр ─────────────────────────────────────
     const mlModel = await loadOrTrainModel(candles);
     const { confidence } = await predictSignal(liveCandles, mlModel);
 
     botState.mlConfidence = confidence;
     console.log(`🤖 ML: вероятность роста = ${(confidence * 100).toFixed(1)}%`);
 
-    // SHORT торгует только если ML уверен в падении
+    // Боковик 40-60% — не торгуем
     if (confidence >= ML_THRESHOLD_SHORT) {
       console.log(
         `⛔ SHORT бот: ML ${(confidence * 100).toFixed(1)}% >= 40% — не шортим`,
@@ -243,16 +234,8 @@ export const start = async () => {
       return;
     }
 
-    // Боковик — не торгуем
-    if (confidence >= 0.4 && confidence <= ML_THRESHOLD_NEUTRAL) {
-      console.log(
-        `⏸️ SHORT бот: боковик ${(confidence * 100).toFixed(1)}% — пропускаем`,
-      );
-      return;
-    }
-
     console.log(
-      `✅ SHORT бот: ML ${(confidence * 100).toFixed(1)}% < 40% — ищем SELL сигнал`,
+      `✅ SHORT бот: ML ${(confidence * 100).toFixed(1)}% < 40% — ищем SELL`,
     );
 
     const best = sortBest(valid)[0];
@@ -261,7 +244,6 @@ export const start = async () => {
     console.log(`\n🏆 Strategy: ${best.name}`);
     console.log(`📡 Signal: ${liveSignal.signal} — ${liveSignal.reason}`);
 
-    // SHORT бот принимает только SELL сигналы
     if (liveSignal.signal !== "SELL") {
       console.log("⏸️ SHORT бот: нет SELL сигнала → пропускаем");
       return;
@@ -278,26 +260,21 @@ export const start = async () => {
     const lastATR = calculateATR(candles).at(-1);
     if (!lastATR) return;
 
-    const { stopLoss, takeProfit } = calcSLTP(
-      "SELL",
-      currentPrice,
-      lastATR,
-      best.name,
-    );
+    const { stopLoss, takeProfit } = calcSLTP(currentPrice, lastATR, best.name);
 
-    // Размер позиции по уверенности ML
+    // Размер позиции — минимум 6 USDT
     let riskPercent = RISK_PERCENT;
     if (confidence <= 0.25) riskPercent = 0.0125;
     else if (confidence <= 0.32) riskPercent = 0.01;
     else riskPercent = 0.0075;
 
-    const usdtAmount = balance * riskPercent;
+    const usdtAmount = Math.max(balance * riskPercent, MIN_USDT_AMOUNT);
 
     console.log(
       `\n💸 SELL | ${usdtAmount.toFixed(2)} USDT | SL: ${stopLoss.toFixed(2)} | TP: ${takeProfit.toFixed(2)} | ML: ${(confidence * 100).toFixed(1)}%`,
     );
 
-    // ── Cooldown ──────────────────────────────────────
+    // ── Cooldown 30 мин после закрытия ───────────────
     const lastClosed = await Position.findOne({
       symbol: SYMBOL,
       status: "CLOSED",
