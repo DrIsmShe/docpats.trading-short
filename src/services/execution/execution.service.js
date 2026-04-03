@@ -2,12 +2,12 @@ import crypto from "crypto";
 import axios from "axios";
 import Position from "../../models/Position.model.js";
 
-// ─── Фьючерсные эндпоинты ──────────────────────────────────────────────────
 const BASE_URLS = ["https://fapi.binance.com"];
 
 const TIMEOUT_MS = 15000;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
+const LEVERAGE = 10;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -18,12 +18,7 @@ const binanceRequest = async (method, endpoint, params = {}, headers = {}) => {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         const url = `${baseUrl}${endpoint}`;
-        const config = {
-          method,
-          url,
-          timeout: TIMEOUT_MS,
-          headers,
-        };
+        const config = { method, url, timeout: TIMEOUT_MS, headers };
 
         if (method === "GET") {
           config.params = params;
@@ -112,7 +107,7 @@ const roundToStepSize = (quantity, stepSize) => {
 };
 
 // ======================
-// 🚀 ОТКРЫТЬ SHORT ПОЗИЦИЮ
+// 🚀 ОТКРЫТЬ ПОЗИЦИЮ
 // ======================
 export const openPosition = async ({
   symbol,
@@ -134,7 +129,7 @@ export const openPosition = async ({
       (f) => f.filterType === "LOT_SIZE",
     );
     const stepSize = lotFilter?.stepSize ?? "0.001";
-    const LEVERAGE = 10;
+
     const rawQty = (usdtAmount * LEVERAGE) / price;
     const quantity = roundToStepSize(rawQty, stepSize);
     const notional = quantity * price;
@@ -144,25 +139,21 @@ export const openPosition = async ({
       return null;
     }
 
-    console.log(`\n🚀 Открываем ${side} ${symbol} (FUTURES)`);
+    console.log(`\n🚀 Открываем ${side} ${symbol} (FUTURES x${LEVERAGE})`);
     console.log(`   Цена: ${price} | Qty: ${quantity} | USDT: ${usdtAmount}`);
     console.log(
       `   SL: ${stopLoss?.toFixed(2)} | TP: ${takeProfit?.toFixed(2)}`,
     );
 
-    // Устанавливаем плечо x1 (без плеча)
-    await privatePost("/fapi/v1/leverage", {
-      symbol,
-      leverage: 10,
-    });
+    // Устанавливаем плечо
+    await privatePost("/fapi/v1/leverage", { symbol, leverage: LEVERAGE });
 
-    // Открываем рыночный ордер
+    // Открываем рыночный ордер (One-way mode — без positionSide)
     const order = await privatePost("/fapi/v1/order", {
       symbol,
-      side, // SELL для шорта
+      side,
       type: "MARKET",
       quantity,
-      positionSide: "SHORT", // для Hedge Mode
     });
 
     const filledPrice = parseFloat(order.avgPrice ?? price);
@@ -183,6 +174,7 @@ export const openPosition = async ({
       openedAt: new Date(),
     });
 
+    console.log(`💾 Позиция сохранена: ${position._id}`);
     return position;
   } catch (err) {
     console.error(
@@ -204,21 +196,25 @@ export const closePosition = async (positionId, reason = "MANUAL") => {
     const price = await getCurrentPrice(position.symbol);
     const closeSide = position.side === "SELL" ? "BUY" : "SELL";
 
-    console.log(`\n🔒 Закрываем SHORT ${position.symbol} (${reason})`);
+    console.log(
+      `\n🔒 Закрываем ${position.side} ${position.symbol} (${reason})`,
+    );
 
     const order = await privatePost("/fapi/v1/order", {
       symbol: position.symbol,
       side: closeSide,
       type: "MARKET",
       quantity: position.quantity,
-      positionSide: "SHORT",
-      reduceOnly: true,
     });
 
     const exitPrice = parseFloat(order.avgPrice ?? price);
-    const pnlPercent = (position.entryPrice - exitPrice) / position.entryPrice;
-    const pnlUSDT = position.usdtAmount * pnlPercent;
-    const feeUSDT = position.usdtAmount * 0.001 * 2;
+    const pnlPercent =
+      position.side === "SELL"
+        ? (position.entryPrice - exitPrice) / position.entryPrice
+        : (exitPrice - position.entryPrice) / position.entryPrice;
+
+    const pnlUSDT = position.usdtAmount * pnlPercent * LEVERAGE;
+    const feeUSDT = position.usdtAmount * 0.0004 * 2;
     const netPnL = pnlUSDT - feeUSDT;
 
     position.status = "CLOSED";
@@ -229,7 +225,7 @@ export const closePosition = async (positionId, reason = "MANUAL") => {
     position.closedAt = new Date();
     await position.save();
 
-    console.log(`✅ SHORT закрыт | PnL: ${netPnL.toFixed(4)} USDT`);
+    console.log(`✅ Позиция закрыта | PnL: ${netPnL.toFixed(4)} USDT`);
     return position;
   } catch (err) {
     console.error("❌ Ошибка закрытия:", err.response?.data || err.message);
