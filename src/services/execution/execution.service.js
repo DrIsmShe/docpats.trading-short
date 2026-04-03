@@ -134,8 +134,8 @@ export const openPosition = async ({
       (f) => f.filterType === "LOT_SIZE",
     );
     const stepSize = lotFilter?.stepSize ?? "0.001";
-
-    const rawQty = (usdtAmount * 10) / price; // умножаем на плечо x10
+    const LEVERAGE = 10;
+    const rawQty = (usdtAmount * LEVERAGE) / price;
     const quantity = roundToStepSize(rawQty, stepSize);
     const notional = quantity * price;
 
