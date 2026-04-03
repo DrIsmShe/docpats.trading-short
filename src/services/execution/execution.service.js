@@ -156,8 +156,8 @@ export const openPosition = async ({
       quantity,
     });
 
-    const filledPrice = parseFloat(order.avgPrice ?? price);
-    const filledQty = parseFloat(order.executedQty);
+    const filledPrice = parseFloat(order.avgPrice) || price;
+    const filledQty = parseFloat(order.executedQty) || quantity;
 
     console.log(`✅ Ордер исполнен: ${filledPrice} x ${filledQty}`);
 
