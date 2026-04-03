@@ -2,44 +2,15 @@ import crypto from "crypto";
 import axios from "axios";
 import Position from "../../models/Position.model.js";
 
-// ─── Binance имеет несколько зеркал — пробуем по порядку ───────────────────
-const BASE_URLS = [
-  "https://api.binance.com",
-  "https://api1.binance.com",
-  "https://api2.binance.com",
-  "https://api3.binance.com",
-  "https://api4.binance.com",
-];
+// ─── Фьючерсные эндпоинты ──────────────────────────────────────────────────
+const BASE_URLS = ["https://fapi.binance.com"];
 
-// ─── Таймаут и retry настройки ─────────────────────────────────────────────
-const TIMEOUT_MS = 15000;   // 15 секунд на запрос
-const MAX_RETRIES = 3;       // попыток на каждый URL
-const RETRY_DELAY_MS = 2000; // пауза между попытками
+const TIMEOUT_MS = 15000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
 
-// ─── Опциональный прокси из .env ──────────────────────────────────────────
-// Если есть PROXY_URL в .env (формат: http://user:pass@host:port) — используем
-let proxyConfig = null;
-if (process.env.PROXY_URL) {
-  try {
-    const url = new URL(process.env.PROXY_URL);
-    proxyConfig = {
-      host: url.hostname,
-      port: parseInt(url.port),
-      protocol: url.protocol.replace(":", ""),
-      ...(url.username && {
-        auth: { username: url.username, password: url.password },
-      }),
-    };
-    console.log(`🔌 Прокси настроен: ${url.hostname}:${url.port}`);
-  } catch {
-    console.warn("⚠️ Неверный формат PROXY_URL — прокси отключён");
-  }
-}
-
-// ─── Задержка ──────────────────────────────────────────────────────────────
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ─── Универсальный запрос с retry по всем зеркалам ────────────────────────
 const binanceRequest = async (method, endpoint, params = {}, headers = {}) => {
   let lastError;
 
@@ -52,7 +23,6 @@ const binanceRequest = async (method, endpoint, params = {}, headers = {}) => {
           url,
           timeout: TIMEOUT_MS,
           headers,
-          ...(proxyConfig && { proxy: proxyConfig }),
         };
 
         if (method === "GET") {
@@ -65,41 +35,27 @@ const binanceRequest = async (method, endpoint, params = {}, headers = {}) => {
         return res.data;
       } catch (err) {
         lastError = err;
-        const isTimeout =
-          err.code === "ETIMEDOUT" ||
-          err.code === "ECONNABORTED" ||
-          err.message?.includes("timeout") ||
-          err.message?.includes("secureConnect");
-
         console.warn(
-          `⚠️  [${baseUrl}] попытка ${attempt}/${MAX_RETRIES}: ${err.message}`
+          `⚠️  [${baseUrl}] попытка ${attempt}/${MAX_RETRIES}: ${err.message}`,
         );
 
-        // Ошибка авторизации или биржи — не ретраим
         if (err.response?.status === 400 || err.response?.status === 401) {
           throw err;
         }
 
-        if (attempt < MAX_RETRIES) {
-          await sleep(RETRY_DELAY_MS);
-        }
+        if (attempt < MAX_RETRIES) await sleep(RETRY_DELAY_MS);
       }
     }
-    console.warn(`❌ ${baseUrl} недоступен — пробуем следующий...`);
   }
 
   throw lastError;
 };
 
-// ======================
-// 🔐 ПОДПИСЬ
-// ======================
-const sign = (queryString) => {
-  return crypto
+const sign = (queryString) =>
+  crypto
     .createHmac("sha256", process.env.BINANCE_SECRET_KEY)
     .update(queryString)
     .digest("hex");
-};
 
 const privatePost = async (endpoint, params = {}) => {
   const timestamp = Date.now();
@@ -121,7 +77,7 @@ const privateGet = async (endpoint, params = {}) => {
     "GET",
     endpoint,
     Object.fromEntries(new URLSearchParams(`${query}&signature=${signature}`)),
-    { "X-MBX-APIKEY": process.env.BINANCE_API_KEY }
+    { "X-MBX-APIKEY": process.env.BINANCE_API_KEY },
   );
 };
 
@@ -129,25 +85,25 @@ const privateGet = async (endpoint, params = {}) => {
 // 📊 ТЕКУЩАЯ ЦЕНА
 // ======================
 export const getCurrentPrice = async (symbol) => {
-  const data = await binanceRequest("GET", "/api/v3/ticker/price", { symbol });
+  const data = await binanceRequest("GET", "/fapi/v1/ticker/price", { symbol });
   return parseFloat(data.price);
 };
 
 // ======================
-// 📊 БАЛАНС USDT
+// 📊 БАЛАНС USDT (фьючерсный)
 // ======================
 export const getUSDTBalance = async () => {
-  const account = await privateGet("/api/v3/account");
-  const usdt = account.balances.find((b) => b.asset === "USDT");
-  return parseFloat(usdt?.free ?? "0");
+  const account = await privateGet("/fapi/v2/account");
+  const usdt = account.assets.find((a) => a.asset === "USDT");
+  return parseFloat(usdt?.availableBalance ?? "0");
 };
 
 // ======================
 // 🔢 LOT SIZE
 // ======================
 const getSymbolInfo = async (symbol) => {
-  const data = await binanceRequest("GET", "/api/v3/exchangeInfo", { symbol });
-  return data.symbols[0];
+  const data = await binanceRequest("GET", "/fapi/v1/exchangeInfo");
+  return data.symbols.find((s) => s.symbol === symbol);
 };
 
 const roundToStepSize = (quantity, stepSize) => {
@@ -156,7 +112,7 @@ const roundToStepSize = (quantity, stepSize) => {
 };
 
 // ======================
-// 🚀 ОТКРЫТЬ ПОЗИЦИЮ
+// 🚀 ОТКРЫТЬ SHORT ПОЗИЦИЮ
 // ======================
 export const openPosition = async ({
   symbol,
@@ -175,39 +131,41 @@ export const openPosition = async ({
     const price = await getCurrentPrice(symbol);
     const symbolInfo = await getSymbolInfo(symbol);
     const lotFilter = symbolInfo.filters.find(
-      (f) => f.filterType === "LOT_SIZE"
+      (f) => f.filterType === "LOT_SIZE",
     );
     const stepSize = lotFilter?.stepSize ?? "0.001";
-    const minNotionalFilter = symbolInfo.filters.find(
-      (f) => f.filterType === "MIN_NOTIONAL"
-    );
-    const minNotional = parseFloat(minNotionalFilter?.minNotional ?? "5");
 
     const rawQty = usdtAmount / price;
     const quantity = roundToStepSize(rawQty, stepSize);
     const notional = quantity * price;
 
-    if (notional < minNotional) {
-      console.error(`❌ Notional too small: ${notional.toFixed(2)} < ${minNotional}`);
-      return null;
-    }
-    if (quantity <= 0) {
-      console.error("❌ Количество слишком маленькое");
+    if (notional < 5) {
+      console.error(`❌ Notional too small: ${notional.toFixed(2)} < 5`);
       return null;
     }
 
-    console.log(`\n🚀 Открываем ${side} ${symbol}`);
+    console.log(`\n🚀 Открываем ${side} ${symbol} (FUTURES)`);
     console.log(`   Цена: ${price} | Qty: ${quantity} | USDT: ${usdtAmount}`);
-    console.log(`   SL: ${stopLoss?.toFixed(2)} | TP: ${takeProfit?.toFixed(2)}`);
+    console.log(
+      `   SL: ${stopLoss?.toFixed(2)} | TP: ${takeProfit?.toFixed(2)}`,
+    );
 
-    const order = await privatePost("/api/v3/order", {
+    // Устанавливаем плечо x1 (без плеча)
+    await privatePost("/fapi/v1/leverage", {
       symbol,
-      side,
-      type: "MARKET",
-      quantity,
+      leverage: 1,
     });
 
-    const filledPrice = parseFloat(order.fills?.[0]?.price ?? price);
+    // Открываем рыночный ордер
+    const order = await privatePost("/fapi/v1/order", {
+      symbol,
+      side, // SELL для шорта
+      type: "MARKET",
+      quantity,
+      positionSide: "SHORT", // для Hedge Mode
+    });
+
+    const filledPrice = parseFloat(order.avgPrice ?? price);
     const filledQty = parseFloat(order.executedQty);
 
     console.log(`✅ Ордер исполнен: ${filledPrice} x ${filledQty}`);
@@ -225,10 +183,12 @@ export const openPosition = async ({
       openedAt: new Date(),
     });
 
-    console.log(`💾 Позиция сохранена: ${position._id}`);
     return position;
   } catch (err) {
-    console.error("❌ Ошибка открытия позиции:", err.response?.data || err.message);
+    console.error(
+      "❌ Ошибка открытия позиции:",
+      err.response?.data || err.message,
+    );
     return null;
   }
 };
@@ -239,30 +199,24 @@ export const openPosition = async ({
 export const closePosition = async (positionId, reason = "MANUAL") => {
   try {
     const position = await Position.findById(positionId);
-    if (!position || position.status !== "OPEN") {
-      console.log("⚠️ Позиция не найдена или уже закрыта");
-      return null;
-    }
+    if (!position || position.status !== "OPEN") return null;
 
-    const closeSide = position.side === "BUY" ? "SELL" : "BUY";
     const price = await getCurrentPrice(position.symbol);
+    const closeSide = position.side === "SELL" ? "BUY" : "SELL";
 
-    console.log(`\n🔒 Закрываем позицию ${position._id} (${reason})`);
-    console.log(`   Цена входа: ${position.entryPrice} | Текущая: ${price}`);
+    console.log(`\n🔒 Закрываем SHORT ${position.symbol} (${reason})`);
 
-    const order = await privatePost("/api/v3/order", {
+    const order = await privatePost("/fapi/v1/order", {
       symbol: position.symbol,
       side: closeSide,
       type: "MARKET",
       quantity: position.quantity,
+      positionSide: "SHORT",
+      reduceOnly: true,
     });
 
-    const exitPrice = parseFloat(order.fills?.[0]?.price ?? price);
-    const pnlPercent =
-      position.side === "BUY"
-        ? (exitPrice - position.entryPrice) / position.entryPrice
-        : (position.entryPrice - exitPrice) / position.entryPrice;
-
+    const exitPrice = parseFloat(order.avgPrice ?? price);
+    const pnlPercent = (position.entryPrice - exitPrice) / position.entryPrice;
     const pnlUSDT = position.usdtAmount * pnlPercent;
     const feeUSDT = position.usdtAmount * 0.001 * 2;
     const netPnL = pnlUSDT - feeUSDT;
@@ -275,14 +229,10 @@ export const closePosition = async (positionId, reason = "MANUAL") => {
     position.closedAt = new Date();
     await position.save();
 
-    console.log(`✅ Позиция закрыта`);
-    console.log(
-      `   Выход: ${exitPrice} | PnL: ${netPnL.toFixed(4)} USDT (${(pnlPercent * 100).toFixed(2)}%)`
-    );
-
+    console.log(`✅ SHORT закрыт | PnL: ${netPnL.toFixed(4)} USDT`);
     return position;
   } catch (err) {
-    console.error("❌ Ошибка закрытия позиции:", err.response?.data || err.message);
+    console.error("❌ Ошибка закрытия:", err.response?.data || err.message);
     return null;
   }
 };
@@ -299,9 +249,9 @@ export const monitorPositions = async () => {
 
       if (pos.stopLoss) {
         const slHit =
-          pos.side === "BUY" ? price <= pos.stopLoss : price >= pos.stopLoss;
+          pos.side === "SELL" ? price >= pos.stopLoss : price <= pos.stopLoss;
         if (slHit) {
-          console.log(`🛑 SL сработал для ${pos.symbol} @ ${price}`);
+          console.log(`🛑 SL сработал ${pos.symbol} @ ${price}`);
           await closePosition(pos._id, "SL");
           continue;
         }
@@ -309,11 +259,11 @@ export const monitorPositions = async () => {
 
       if (pos.takeProfit) {
         const tpHit =
-          pos.side === "BUY"
-            ? price >= pos.takeProfit
-            : price <= pos.takeProfit;
+          pos.side === "SELL"
+            ? price <= pos.takeProfit
+            : price >= pos.takeProfit;
         if (tpHit) {
-          console.log(`🎯 TP сработал для ${pos.symbol} @ ${price}`);
+          console.log(`🎯 TP сработал ${pos.symbol} @ ${price}`);
           await closePosition(pos._id, "TP");
           continue;
         }
@@ -321,7 +271,7 @@ export const monitorPositions = async () => {
 
       const hoursOpen = (Date.now() - pos.openedAt.getTime()) / 3600000;
       if (hoursOpen > 48) {
-        console.log(`⏱️ Таймаут позиции ${pos.symbol} (${hoursOpen.toFixed(1)}h)`);
+        console.log(`⏱️ Таймаут ${pos.symbol}`);
         await closePosition(pos._id, "TIMEOUT");
       }
     }
