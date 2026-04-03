@@ -36,9 +36,9 @@ const MIN_WIN_RATE = 30;
 const MIN_TRADES_REQUIRED = 5;
 const MAX_DRAWDOWN_ALLOWED = 30;
 const RISK_PERCENT = 0.01;
-const MIN_USDT_AMOUNT = 6; // минимум 6 USDT на сделку
+const MIN_USDT_AMOUNT = 15; // 15 USDT * плечо 10 = 150 USDT контракт
 
-const ML_THRESHOLD_SHORT = 0.4; // торгуем только если ML < 40%
+const ML_THRESHOLD_SHORT = 0.4;
 
 export const botState = {
   regime: "—",
@@ -173,7 +173,6 @@ export const start = async () => {
     printResult("Mean Reversion", meanResult);
     printResult("Breakout", breakoutResult);
 
-    // SHORT бот молчит в UPTREND
     if (regime === "UPTREND") {
       console.log("⛔ SHORT бот: UPTREND — пропускаем");
       return;
@@ -226,7 +225,6 @@ export const start = async () => {
     botState.mlConfidence = confidence;
     console.log(`🤖 ML: вероятность роста = ${(confidence * 100).toFixed(1)}%`);
 
-    // Боковик 40-60% — не торгуем
     if (confidence >= ML_THRESHOLD_SHORT) {
       console.log(
         `⛔ SHORT бот: ML ${(confidence * 100).toFixed(1)}% >= 40% — не шортим`,
@@ -262,7 +260,7 @@ export const start = async () => {
 
     const { stopLoss, takeProfit } = calcSLTP(currentPrice, lastATR, best.name);
 
-    // Размер позиции — минимум 6 USDT
+    // Размер позиции — минимум 15 USDT (x10 плечо = 150 USDT контракт)
     let riskPercent = RISK_PERCENT;
     if (confidence <= 0.25) riskPercent = 0.0125;
     else if (confidence <= 0.32) riskPercent = 0.01;
@@ -274,7 +272,7 @@ export const start = async () => {
       `\n💸 SELL | ${usdtAmount.toFixed(2)} USDT | SL: ${stopLoss.toFixed(2)} | TP: ${takeProfit.toFixed(2)} | ML: ${(confidence * 100).toFixed(1)}%`,
     );
 
-    // ── Cooldown 30 мин после закрытия ───────────────
+    // ── Cooldown 30 мин ───────────────────────────────
     const lastClosed = await Position.findOne({
       symbol: SYMBOL,
       status: "CLOSED",
