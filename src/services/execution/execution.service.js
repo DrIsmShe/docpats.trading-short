@@ -135,7 +135,7 @@ export const openPosition = async ({
     );
     const stepSize = lotFilter?.stepSize ?? "0.001";
 
-    const rawQty = usdtAmount / price;
+    const rawQty = (usdtAmount * 10) / price; // умножаем на плечо x10
     const quantity = roundToStepSize(rawQty, stepSize);
     const notional = quantity * price;
 
@@ -153,7 +153,7 @@ export const openPosition = async ({
     // Устанавливаем плечо x1 (без плеча)
     await privatePost("/fapi/v1/leverage", {
       symbol,
-      leverage: 1,
+      leverage: 10,
     });
 
     // Открываем рыночный ордер
