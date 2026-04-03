@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BTC Trading Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0a0f;
+        --surface: #111118;
+        --border: #1e1e2e;
+        --text: #e2e2f0;
+        --muted: #555570;
+        --green: #00e676;
+        --red: #ff1744;
+        --yellow: #ffd740;
+        --blue: #448aff;
+        --accent: #7c4dff;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: "DM Sans", sans-serif;
+        min-height: 100vh;
+        padding: 24px;
+      }
+
+      /* HEADER */
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 32px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      .logo {
+        font-family: "Space Mono", monospace;
+        font-size: 18px;
+        letter-spacing: 0.1em;
+        color: var(--text);
+      }
+      .logo span {
+        color: var(--accent);
+      }
+      .live-badge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--muted);
+        font-family: "Space Mono", monospace;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--green);
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+
+      /* GRID */
+      .grid-4 {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      @media (max-width: 900px) {
+        .grid-4 {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* CARDS */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .card-label {
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 10px;
+        font-family: "Space Mono", monospace;
+      }
+      .card-value {
+        font-size: 28px;
+        font-weight: 300;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      .card-sub {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .green {
+        color: var(--green);
+      }
+      .red {
+        color: var(--red);
+      }
+      .yellow {
+        color: var(--yellow);
+      }
+      .blue {
+        color: var(--blue);
+      }
+
+      /* STRATEGY CARD */
+      .strategy-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .strategy-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 16px;
+      }
+      .strategy-name {
+        font-family: "Space Mono", monospace;
+        font-size: 14px;
+        color: var(--text);
+      }
+      .strategy-badge {
+        font-size: 10px;
+        padding: 3px 10px;
+        border-radius: 100px;
+        font-family: "Space Mono", monospace;
+        letter-spacing: 0.05em;
+      }
+      .badge-active {
+        background: rgba(0, 230, 118, 0.12);
+        color: var(--green);
+        border: 1px solid rgba(0, 230, 118, 0.3);
+      }
+      .badge-wait {
+        background: rgba(255, 215, 64, 0.12);
+        color: var(--yellow);
+        border: 1px solid rgba(255, 215, 64, 0.3);
+      }
+      .badge-fail {
+        background: rgba(255, 23, 68, 0.12);
+        color: var(--red);
+        border: 1px solid rgba(255, 23, 68, 0.3);
+      }
+
+      .stat-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .stat-row:last-child {
+        border-bottom: none;
+      }
+      .stat-key {
+        color: var(--muted);
+      }
+
+      /* METER BAR */
+      .meter {
+        height: 3px;
+        background: var(--border);
+        border-radius: 2px;
+        margin-top: 8px;
+        overflow: hidden;
+      }
+      .meter-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.8s ease;
+      }
+
+      /* TRADES TABLE */
+      .trades-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .trades-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+        font-family: "Space Mono", monospace;
+        font-size: 11px;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th {
+        text-align: left;
+        padding: 10px 20px;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-family: "Space Mono", monospace;
+        font-weight: 400;
+        border-bottom: 1px solid var(--border);
+      }
+      td {
+        padding: 12px 20px;
+        font-size: 13px;
+        border-bottom: 1px solid rgba(30, 30, 46, 0.5);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      tr:hover td {
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .side-buy {
+        color: var(--green);
+        font-family: "Space Mono", monospace;
+        font-size: 11px;
+      }
+      .side-sell {
+        color: var(--red);
+        font-family: "Space Mono", monospace;
+        font-size: 11px;
+      }
+
+      .reason-pill {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.06);
+        font-family: "Space Mono", monospace;
+      }
+
+      /* REGIME */
+      .regime-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      .regime-chip {
+        padding: 6px 16px;
+        border-radius: 100px;
+        font-size: 12px;
+        font-family: "Space Mono", monospace;
+        letter-spacing: 0.05em;
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .regime-chip.active {
+        background: rgba(124, 77, 255, 0.15);
+        border-color: rgba(124, 77, 255, 0.4);
+        color: #b39ddb;
+      }
+
+      /* REFRESH */
+      .refresh-btn {
+        background: none;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+        font-family: "Space Mono", monospace;
+        transition: all 0.2s;
+      }
+      .refresh-btn:hover {
+        border-color: var(--accent);
+        color: var(--text);
+      }
+
+      .empty {
+        text-align: center;
+        padding: 40px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="logo">BTC<span>/</span>USDT · ALGO</div>
+      <div style="display: flex; gap: 12px; align-items: center">
+        <div class="live-badge">
+          <div class="dot"></div>
+          <span id="last-update">Loading...</span>
+        </div>
+        <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <!-- METRIC CARDS -->
+    <div class="grid-4" id="metrics">
+      <div class="card">
+        <div class="card-label">Balance</div>
+        <div class="card-value" id="balance">—</div>
+        <div class="card-sub">USDT</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Total PnL</div>
+        <div class="card-value" id="total-pnl">—</div>
+        <div class="card-sub" id="pnl-trades">— trades</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Win Rate</div>
+        <div class="card-value" id="winrate">—</div>
+        <div class="card-sub" id="winrate-sub">—</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Open Position</div>
+        <div class="card-value" id="open-pos">None</div>
+        <div class="card-sub" id="open-sub">—</div>
+      </div>
+    </div>
+
+    <!-- REGIME -->
+    <div class="regime-row" id="regime-row">
+      <div class="regime-chip" id="r-1h">1h: —</div>
+      <div class="regime-chip" id="r-4h">4h: —</div>
+      <div class="regime-chip" id="r-vol">VOL: —</div>
+      <div class="regime-chip" id="r-strategy">Strategy: —</div>
+    </div>
+
+    <!-- STRATEGIES -->
+    <div class="grid-2" style="margin-bottom: 24px" id="strat-grid"></div>
+
+    <!-- TRADES -->
+    <div class="trades-card">
+      <div class="trades-header">Recent Trades</div>
+      <div id="trades-body">
+        <div class="empty">No trades yet</div>
+      </div>
+    </div>
+
+    <script>
+      // =====================
+      // API calls to backend
+      // =====================
+      const API = "/api"; // ← поменяй на свой порт если нужно
+
+      async function loadData() {
+        try {
+          // Пробуем загрузить данные из API
+          const [statsRes, posRes, tradesRes] = await Promise.allSettled([
+            fetch(`${API}/stats`),
+            fetch(`${API}/positions/open`),
+            fetch(`${API}/trades?limit=20`),
+          ]);
+
+          if (statsRes.status === "fulfilled" && statsRes.value.ok) {
+            const stats = await statsRes.value.json();
+            renderStats(stats);
+          } else {
+            // Демо-данные если API не поднят
+            renderStats(DEMO_STATS);
+          }
+
+          if (tradesRes.status === "fulfilled" && tradesRes.value.ok) {
+            const trades = await tradesRes.value.json();
+            renderTrades(trades);
+          } else {
+            renderTrades(DEMO_TRADES);
+          }
+
+          document.getElementById("last-update").textContent =
+            new Date().toLocaleTimeString("ru");
+        } catch (e) {
+          renderStats(DEMO_STATS);
+          renderTrades(DEMO_TRADES);
+          document.getElementById("last-update").textContent = "Demo mode";
+        }
+      }
+
+      function renderStats(s) {
+        // Balance
+        document.getElementById("balance").textContent = s.balance
+          ? s.balance.toFixed(2)
+          : "—";
+
+        // PnL
+        const pnl = s.totalPnL ?? 0;
+        const pnlEl = document.getElementById("total-pnl");
+        pnlEl.textContent = (pnl >= 0 ? "+" : "") + pnl.toFixed(4);
+        pnlEl.className = "card-value " + (pnl >= 0 ? "green" : "red");
+        document.getElementById("pnl-trades").textContent =
+          `${s.totalTrades ?? 0} trades`;
+
+        // WinRate
+        const wr = s.winRate ?? 0;
+        document.getElementById("winrate").textContent = wr.toFixed(1) + "%";
+        document.getElementById("winrate").className =
+          "card-value " + (wr >= 50 ? "green" : wr >= 40 ? "yellow" : "red");
+        document.getElementById("winrate-sub").textContent =
+          `${s.wins ?? 0}W / ${s.losses ?? 0}L`;
+
+        // Open position
+        if (s.openPosition) {
+          const op = s.openPosition;
+          const pnlPct = op.unrealizedPnl ?? 0;
+          document.getElementById("open-pos").textContent = op.side;
+          document.getElementById("open-pos").className =
+            "card-value " + (op.side === "BUY" ? "green" : "red");
+          document.getElementById("open-sub").textContent =
+            `${op.symbol} @ ${op.entryPrice?.toFixed(2)} | ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%`;
+        } else {
+          document.getElementById("open-pos").textContent = "None";
+          document.getElementById("open-pos").className = "card-value muted";
+          document.getElementById("open-sub").textContent =
+            "Waiting for signal";
+        }
+
+        // Regime
+        const regime = s.regime ?? "—";
+        const htf = s.htfTrend ?? "—";
+        const vol = s.volatility ?? 0;
+        const strat = s.bestStrategy ?? "—";
+
+        document.getElementById("r-1h").textContent = `1h: ${regime}`;
+        document.getElementById("r-4h").textContent = `4h: ${htf}`;
+        document.getElementById("r-vol").textContent =
+          `VOL: ${vol.toFixed(2)}%`;
+        document.getElementById("r-strategy").textContent = `▶ ${strat}`;
+
+        ["r-1h", "r-4h", "r-vol", "r-strategy"].forEach((id) => {
+          document.getElementById(id).classList.remove("active");
+        });
+        document.getElementById("r-strategy").classList.add("active");
+
+        // Strategy cards
+        renderStrategyCards(s.strategies ?? []);
+      }
+
+      function renderStrategyCards(strategies) {
+        const grid = document.getElementById("strat-grid");
+        if (!strategies.length) {
+          grid.innerHTML = "";
+          return;
+        }
+
+        grid.innerHTML = strategies
+          .map((s) => {
+            const pf = isFinite(s.profitFactor)
+              ? s.profitFactor.toFixed(2)
+              : "∞";
+            const pass =
+              s.profitFactor >= 1.0 && s.winRate >= 38 && s.totalTrades >= 10;
+            const badge = pass
+              ? '<span class="strategy-badge badge-active">VALID</span>'
+              : '<span class="strategy-badge badge-fail">NO EDGE</span>';
+
+            const pfColor =
+              s.profitFactor >= 1.5
+                ? "green"
+                : s.profitFactor >= 1.0
+                  ? "yellow"
+                  : "red";
+            const wrColor =
+              s.winRate >= 50 ? "green" : s.winRate >= 40 ? "yellow" : "red";
+            const pfWidth = Math.min((s.profitFactor / 3) * 100, 100);
+            const meterColor = s.profitFactor >= 1.0 ? "#00e676" : "#ff1744";
+
+            return `
+    <div class="strategy-card">
+      <div class="strategy-header">
+        <div class="strategy-name">${s.name}</div>
+        ${badge}
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Profit Factor</span>
+        <span class="${pfColor}">${pf}</span>
+      </div>
+      <div class="meter"><div class="meter-fill" style="width:${pfWidth}%;background:${meterColor}"></div></div>
+      <div class="stat-row" style="margin-top:8px">
+        <span class="stat-key">Win Rate</span>
+        <span class="${wrColor}">${s.winRate?.toFixed(1)}%</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Trades</span>
+        <span>${s.totalTrades}</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Max Drawdown</span>
+        <span class="${s.maxDrawdown > 20 ? "red" : "muted"}">${s.maxDrawdown?.toFixed(1)}%</span>
+      </div>
+    </div>`;
+          })
+          .join("");
+      }
+
+      function renderTrades(trades) {
+        const body = document.getElementById("trades-body");
+        if (!trades || !trades.length) {
+          body.innerHTML =
+            '<div class="empty">No trades yet — waiting for first signal</div>';
+          return;
+        }
+
+        body.innerHTML = `
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Side</th>
+        <th>Entry</th>
+        <th>Exit</th>
+        <th>PnL</th>
+        <th>Reason</th>
+        <th>Hold</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${trades
+        .map((t) => {
+          const pnl = t.pnlUSDT ?? 0;
+          const pnlColor = pnl >= 0 ? "green" : "red";
+          const pnlStr = (pnl >= 0 ? "+" : "") + pnl.toFixed(4);
+          const time = t.closedAt
+            ? new Date(t.closedAt).toLocaleString("ru", {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "—";
+          const hours =
+            t.openedAt && t.closedAt
+              ? (
+                  (new Date(t.closedAt) - new Date(t.openedAt)) /
+                  3600000
+                ).toFixed(1) + "h"
+              : "—";
+          return `
+        <tr>
+          <td style="color:var(--muted);font-size:12px">${time}</td>
+          <td class="${t.side === "BUY" ? "side-buy" : "side-sell"}">${t.side}</td>
+          <td style="font-family:'Space Mono',monospace;font-size:12px">${t.entryPrice?.toFixed(2)}</td>
+          <td style="font-family:'Space Mono',monospace;font-size:12px">${t.exitPrice?.toFixed(2) ?? "—"}</td>
+          <td class="${pnlColor}" style="font-family:'Space Mono',monospace;font-size:12px">${pnlStr}</td>
+          <td><span class="reason-pill">${t.closeReason ?? "—"}</span></td>
+          <td style="color:var(--muted);font-size:12px">${hours}</td>
+        </tr>`;
+        })
+        .join("")}
+    </tbody>
+  </table>`;
+      }
+
+      // =====================
+      // DEMO DATA (если API не запущен)
+      // =====================
+      const DEMO_STATS = {
+        balance: 49.63,
+        totalPnL: 0,
+        totalTrades: 0,
+        wins: 0,
+        losses: 0,
+        winRate: 0,
+        openPosition: null,
+        regime: "DOWNTREND",
+        htfTrend: "DOWNTREND",
+        volatility: 0.64,
+        bestStrategy: "Breakout",
+        strategies: [
+          {
+            name: "Momentum",
+            profitFactor: 1.04,
+            winRate: 41.4,
+            totalTrades: 29,
+            maxDrawdown: 1.7,
+          },
+          {
+            name: "Mean Reversion",
+            profitFactor: 0.0,
+            winRate: 0.0,
+            totalTrades: 4,
+            maxDrawdown: 1.0,
+          },
+          {
+            name: "Breakout",
+            profitFactor: 1.28,
+            winRate: 54.5,
+            totalTrades: 11,
+            maxDrawdown: 1.0,
+          },
+        ],
+      };
+      const DEMO_TRADES = [];
+
+      // Автообновление каждую минуту
+      loadData();
+      setInterval(loadData, 60000);
+    </script>
+  </body>
+</html>
